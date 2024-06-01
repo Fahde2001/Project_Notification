@@ -1,12 +1,23 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { Handler, Context, Callback } from 'aws-lambda';
+import { createServer, proxy } from 'aws-serverless-express';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import * as express from 'express';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+let cachedServer;
+
+async function bootstrapServer() {
+  const expressApp = express();
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp));
   app.enableCors();
-  await app.listen(3000, () => {
-    console.log('Nest application is listening on port 3000 over HTTP');
-  });
+  await app.init();
+  return createServer(expressApp);
 }
 
-bootstrap();
+export const handler: Handler = async (event: any, context: Context, callback: Callback) => {
+  if (!cachedServer) {
+    cachedServer = await bootstrapServer();
+  }
+  return proxy(cachedServer, event, context, 'PROMISE').promise;
+};
